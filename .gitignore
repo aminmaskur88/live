@@ -1,0 +1,47 @@
+# Environment & Secrets (PENTING: Jangan upload Stream Key / file env ke publik)
+config.env
+.env
+*.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# User Media (kecuali sample bawaan jika ada)
+video/*
+!video/sample_background.mp4
+!video/.gitkeep
+music/*
+!music/sample_track_*.mp3
+!music/.gitkeep
+
+# System & Editor
+.DS_Store
+*.log
+nohup.out
+.idea/
+.vscode/
+*.swp
+*~
