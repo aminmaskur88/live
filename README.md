@@ -10,6 +10,40 @@ Skrip otomatis untuk live streaming YouTube 24/7 di **Linux / Android (Termux)**
 
 ---
 
+## 📦 Cara Pasang di Termux (Instalasi Baru)
+
+Jalankan perintah berikut baris demi baris di aplikasi Termux Anda:
+
+### 1. Update Paket & Pasang Dependensi
+```bash
+pkg update -y && pkg upgrade -y
+pkg install git ffmpeg python tmux termux-api -y
+```
+
+### 2. Beri Izin Akses Penyimpanan (Storage)
+```bash
+termux-setup-storage
+```
+*(Pilih **Allow** / **Izinkan** pada pop-up izin memori di HP).*
+
+### 3. Clone Repository
+```bash
+git clone https://github.com/aminmaskur88/live.git
+cd live
+```
+
+### 4. Beri Izin Eksekusi Skrip
+```bash
+chmod +x stream.sh sample_media.sh config_app.py
+```
+
+### 5. Siapkan File Konfigurasi
+```bash
+cp config.env.example config.env
+```
+
+---
+
 ## 📁 Struktur Folder
 
 ```text
@@ -17,6 +51,7 @@ Skrip otomatis untuk live streaming YouTube 24/7 di **Linux / Android (Termux)**
 ├── config.py           # Aplikasi Python antarmuka konfigurasi (CLI & Web UI)
 ├── stream.sh           # Skrip utama untuk menjalankan siaran live streaming
 ├── config.env          # File konfigurasi (Stream Key, Volume, Mode Musik, dll)
+├── config.env.example  # Template contoh konfigurasi default
 ├── playlist.txt        # File urutan playlist lagu kustom
 ├── sample_media.sh     # Skrip pembuat video demo & musik demo untuk uji coba
 ├── video/              # Letakkan file video background Anda di sini (misal: background.mp4)
