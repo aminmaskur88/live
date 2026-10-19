@@ -1,4 +1,17 @@
-# Playlist Kustom Live Streaming
-sample_track_1_C4.mp3
-sample_track_2_E4.mp3
-sample_track_3_G4.mp3
+# ========================================================
+# DAFTAR URUTAN PLAYLIST MUSIK LIVE STREAMING
+# Baris ini dibaca otomatis saat PLAYLIST_MODE="custom"
+# ========================================================
+
+Borneo lofi - aminmaskur45 [4c7fc64a].mp3
+Borneo lofi - aminmaskur45 [c654bcf9].mp3
+Lofi Borneo v3 - aminmaskur45 [48c74bfb].mp3
+Lofi Borneo v3 - aminmaskur45 [8c95b3ac].mp3
+Lofi Borneo v3 - aminmaskur45 [92d68f39].mp3
+Lofi Borneo v3 - aminmaskur45 [fff73433].mp3
+Mekar Hujan - aminmaskur45 [4833ab7e].mp3
+Mekar Hujan - aminmaskur45 [6a0ba57b].mp3
+Mekar Hujan - aminmaskur45 [adf9c143].mp3
+Mekar Hujan - aminmaskur45 [b599bb5c].mp3
+Rain On Sape - aminmaskur45 [8cdf3121].mp3
+Rain On Sape - aminmaskur45 [c68b0905].mp3

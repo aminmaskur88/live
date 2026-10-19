@@ -34,7 +34,7 @@ cd live
 
 ### 4. Beri Izin Eksekusi Skrip
 ```bash
-chmod +x stream.sh sample_media.sh config_app.py
+chmod +x stream.sh sample_media.sh config.py
 ```
 
 ### 5. Siapkan File Konfigurasi
@@ -85,17 +85,25 @@ Gunakan aplikasi Python interaktif untuk mengatur letak video, letak musik, volu
 ```bash
 python3 config.py
 ```
-*(Atau `./config_app.py`)*
+*(Atau `./config.py`)*
 
 #### Mode yang Tersedia:
 - **Mode Terminal Interaktif (CLI):**
   Jalankan `python3 config.py` untuk menu nomor yang rapi dan mudah di navigasi langsung di terminal Termux.
-- **Mode Web Dashboard (Mobile Friendly UI):**
+- **Mode Web Dashboard (Akses dari HP / Laptop / PC):**
   Jalankan:
   ```bash
   python3 config.py --web
   ```
-  Lalu buka browser HP ke **`http://localhost:5000`** untuk tampilan kontrol visual dengan slider volume, drag-and-drop urutan lagu, tombol tes, dan pemantau siaran langsung!
+  - **Akses di HP sendiri:** Buka browser ke **`http://localhost:5000`**
+  - **Akses dari Perangkat Lain (Laptop / HP di Wi-Fi yang sama):** Buka link IP yang tertera di terminal (contoh: **`http://192.168.18.5:5000`**).
+  - **Fitur Lengkap Web Dashboard:**
+    - ⬆️ **Upload Video & Musik:** Drag-and-drop file video dan multi-lagu audio langsung dari browser laptop/HP tanpa perlu memindahkan file manual.
+    - ⭐ **Ganti Video Aktif:** Ganti video background siaran langsung dengan 1 klik.
+    - 👁️ **Preview Pemutar Media:** Tonton preview video dan dengarkan cuplikan lagu langsung di browser.
+    - 📋 **Kelola Playlist:** Atur urutan lagu (naik/turun), acak urutan (shuffle), atau urutkan abjad A-Z.
+    - 🎛️ **Audio Mixer:** Slider volume video & volume playlist musik (0% - 200%).
+    - 🚀 **Kontrol Live & Log:** Mulai/hentikan siaran dan pantau log terminal realtime.
 
 *(Atau Anda juga tetap bisa mengedit file `config.env` secara manual menggunakan `nano config.env`).*
 
