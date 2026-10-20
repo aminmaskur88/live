@@ -124,7 +124,17 @@ find_video_file() {
   echo "$found"
 }
 
-ACTIVE_VIDEO="$(find_video_file)"
+DAY_VIDEO="$DIR/video/day_seamless.mp4"
+NIGHT_VIDEO="$DIR/video/night_seamless.mp4"
+STEAM_VIDEO="$DIR/video/perfect_steam_loop.mov"
+
+DAY_NIGHT_MODE="false"
+if [[ -f "$DAY_VIDEO" && -f "$NIGHT_VIDEO" ]]; then
+  DAY_NIGHT_MODE="true"
+  ACTIVE_VIDEO="$DAY_VIDEO"
+else
+  ACTIVE_VIDEO="$(find_video_file)"
+fi
 
 if [[ -z "$ACTIVE_VIDEO" || ! -f "$ACTIVE_VIDEO" ]]; then
   echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
@@ -327,7 +337,16 @@ stop_audio_feeder() {
 # 10. Tampilkan Rincian Siaran
 echo -e "${BOLD}⚙️  RINCIAN KONFIGURASI LIVE:${NC}"
 echo -e " • Mode Siaran     : $(if [[ "$TEST_MODE" == "true" ]]; then echo -e "${YELLOW}TEST / UJI COBA LOKAL (15s)${NC}"; else echo -e "${GREEN}YOUTUBE LIVE 24/7${NC}"; fi)"
-echo -e " • File Video      : ${CYAN}$ACTIVE_VIDEO${NC}"
+if [[ "$DAY_NIGHT_MODE" == "true" ]]; then
+  echo -e " • Mode Video      : ${GREEN}🌤️/🌙 Siklus Siang-Malam Dinamis Real-Time (WIB)${NC}"
+  echo -e " • Video Siang     : ${CYAN}$DAY_VIDEO${NC}"
+  echo -e " • Video Malam     : ${CYAN}$NIGHT_VIDEO${NC}"
+  if [[ -f "$STEAM_VIDEO" ]]; then
+    echo -e " • Asap Kopi Meja  : ${GREEN}Aktif (Perpetual Seamless Loop)${NC}"
+  fi
+else
+  echo -e " • File Video      : ${CYAN}$ACTIVE_VIDEO${NC}"
+fi
 if [[ "$HAS_VIDEO_AUDIO" == "true" ]]; then
   if [[ "$MIX_VIDEO_AUDIO" == "true" ]]; then
     echo -e " • Audio Video     : ${GREEN}Aktif (Volume: $VIDEO_VOLUME - Dimix dengan musik)${NC}"
@@ -350,43 +369,129 @@ fi
 echo -e "${CYAN}══════════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Filter Skala 1080p dengan Letterboxing Aspect-Ratio Aman
+# Filter Skala & Pipeline Generator
 VIDEO_FILTER="scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${VIDEO_FPS}"
 GOP_SIZE=$((VIDEO_FPS * 2))
+
+prepare_pipeline() {
+  if [[ "$DAY_NIGHT_MODE" == "true" ]]; then
+    # Hitung bobot siang & malam berdasarkan waktu lokal Android (WIB)
+    read -r W_DAY W_NIGHT PHASE <<< $(python3 -c "
+import datetime
+now = datetime.datetime.now()
+m = now.hour * 60 + now.minute
+if 375 <= m < 1035:
+    print('1.000 0.000 siang')
+elif 1035 <= m < 1065:
+    print('1.000 0.000 sore')
+elif 1065 <= m < 1125:
+    p = (m - 1065) / 60.0
+    sp = p * p * (3 - 2 * p)
+    print(f'{1-sp:.3f} {sp:.3f} senja')
+elif m >= 1125 or m < 300:
+    print('0.000 1.000 malam')
+else:
+    p = (m - 300) / 75.0
+    sp = p * p * (3 - 2 * p)
+    print(f'{sp:.3f} {1-sp:.3f} fajar')
+")
+
+    local STEAM_W STEAM_H STEAM_X STEAM_Y
+    if [[ "$VIDEO_WIDTH" -ge 1920 ]]; then
+      STEAM_W=210; STEAM_H=390; STEAM_X=1476; STEAM_Y=298
+    else
+      STEAM_W=140; STEAM_H=260; STEAM_X=984; STEAM_Y=199
+    fi
+
+    # Pilih video atau blend berdasarkan fase waktu
+    if (( $(echo "$W_DAY >= 0.999" | bc -l 2>/dev/null || awk -v d="$W_DAY" 'BEGIN {print (d>=0.999)}') )); then
+      # Murni Siang
+      BASE_INPUTS=(-stream_loop -1 -re -i "$DAY_VIDEO")
+      if [[ "$PHASE" == "sore" ]]; then
+        FILTER_BASE="[0:v]colorbalance=rh=0.12:gh=0.06:bh=-0.08,scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:flags=bicubic[base_scaled]"
+      else
+        FILTER_BASE="[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:flags=bicubic[base_scaled]"
+      fi
+      STEAM_INPUT_IDX=1
+      AUDIO_FIFO_IDX=2
+      AUDIO_V_SRC="[0:a]"
+
+    elif (( $(echo "$W_NIGHT >= 0.999" | bc -l 2>/dev/null || awk -v n="$W_NIGHT" 'BEGIN {print (n>=0.999)}') )); then
+      # Murni Malam
+      BASE_INPUTS=(-stream_loop -1 -re -i "$NIGHT_VIDEO")
+      FILTER_BASE="[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:flags=bicubic[base_scaled]"
+      STEAM_INPUT_IDX=1
+      AUDIO_FIFO_IDX=2
+      AUDIO_V_SRC="[0:a]"
+
+    else
+      # Senja atau Fajar: Blend halus Siang & Malam
+      BASE_INPUTS=(-stream_loop -1 -re -i "$DAY_VIDEO" -stream_loop -1 -re -i "$NIGHT_VIDEO")
+      FILTER_BASE="[0:v][1:v]blend=all_expr='A*${W_DAY}+B*${W_NIGHT}'[base_v];[base_v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:flags=bicubic[base_scaled]"
+      STEAM_INPUT_IDX=2
+      AUDIO_FIFO_IDX=3
+      AUDIO_V_SRC="[v_mixed_a]"
+    fi
+
+    # Tambahkan overlay asap kopi jika tersedia
+    if [[ -f "$STEAM_VIDEO" ]]; then
+      PIPELINE_INPUTS=("${BASE_INPUTS[@]}" -stream_loop -1 -re -i "$STEAM_VIDEO" -f s16le -ar "$AUDIO_SAMPLERATE" -ac 2 -i "$AUDIO_FIFO")
+      local FILTER_V="${FILTER_BASE};[${STEAM_INPUT_IDX}:v]scale=${STEAM_W}:${STEAM_H}[steam];[base_scaled][steam]overlay=${STEAM_X}:${STEAM_Y}:format=rgb,format=yuv420p[vout]"
+      local FIFO_IN_IDX=$((AUDIO_FIFO_IDX))
+    else
+      PIPELINE_INPUTS=("${BASE_INPUTS[@]}" -f s16le -ar "$AUDIO_SAMPLERATE" -ac 2 -i "$AUDIO_FIFO")
+      local FILTER_V="${FILTER_BASE};[base_scaled]format=yuv420p[vout]"
+      local FIFO_IN_IDX=$((AUDIO_FIFO_IDX - 1))
+    fi
+
+    # Audio handling
+    if [[ "$MIX_VIDEO_AUDIO" == "true" ]]; then
+      if [[ "$AUDIO_V_SRC" == "[v_mixed_a]" ]]; then
+        local FILTER_A="[0:a]volume=${W_DAY}[va0];[1:a]volume=${W_NIGHT}[va1];[va0][va1]amix=inputs=2[v_mixed_a];${AUDIO_V_SRC}volume=${VIDEO_VOLUME},aresample=${AUDIO_SAMPLERATE}[va_resamp];[${FIFO_IN_IDX}:a]aresample=${AUDIO_SAMPLERATE}[ma];[va_resamp][ma]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+      else
+        local FILTER_A="${AUDIO_V_SRC}volume=${VIDEO_VOLUME},aresample=${AUDIO_SAMPLERATE}[va_resamp];[${FIFO_IN_IDX}:a]aresample=${AUDIO_SAMPLERATE}[ma];[va_resamp][ma]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+      fi
+    else
+      local FILTER_A="[${FIFO_IN_IDX}:a]aresample=${AUDIO_SAMPLERATE}[aout]"
+    fi
+
+    PIPELINE_FILTER="${FILTER_V};${FILTER_A}"
+  else
+    PIPELINE_INPUTS=(-stream_loop -1 -re -i "$ACTIVE_VIDEO" -f s16le -ar "$AUDIO_SAMPLERATE" -ac 2 -i "$AUDIO_FIFO")
+    if [[ "$MIX_VIDEO_AUDIO" == "true" ]]; then
+      PIPELINE_FILTER="[0:v]${VIDEO_FILTER}[vout];[0:a]volume=${VIDEO_VOLUME},aresample=${AUDIO_SAMPLERATE}[va];[1:a]aresample=${AUDIO_SAMPLERATE}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+    else
+      PIPELINE_FILTER="[0:v]${VIDEO_FILTER}[vout];[1:a]aresample=${AUDIO_SAMPLERATE}[aout]"
+    fi
+  fi
+}
 
 # 11. Eksekusi Mode Uji Coba (--test)
 if [[ "$TEST_MODE" == "true" ]]; then
   TEST_OUTPUT="test_preview_1080p.mp4"
   echo -e "${YELLOW}[*] Menjalankan uji coba encode 1080p selama 15 detik ke file: $TEST_OUTPUT...${NC}"
   start_audio_feeder
+  prepare_pipeline
 
-  if [[ "$MIX_VIDEO_AUDIO" == "true" ]]; then
-    ffmpeg -hide_banner \
-      -stream_loop -1 -re -i "$ACTIVE_VIDEO" \
-      -f s16le -ar "$AUDIO_SAMPLERATE" -ac 2 -i "$AUDIO_FIFO" \
-      -filter_complex "[0:v]${VIDEO_FILTER}[vout];[0:a]volume=${VIDEO_VOLUME},aresample=${AUDIO_SAMPLERATE}[va];[1:a]aresample=${AUDIO_SAMPLERATE}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=0[aout]" \
-      -map "[vout]" -map "[aout]" \
-      -c:v libx264 -preset "$ENCODER_PRESET" -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_MAXRATE" -bufsize "$VIDEO_BUFSIZE" \
-      -pix_fmt yuv420p -g "$GOP_SIZE" -keyint_min "$GOP_SIZE" \
-      -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_SAMPLERATE" \
-      -t 15 -y "$TEST_OUTPUT"
-  else
-    ffmpeg -hide_banner \
-      -stream_loop -1 -re -i "$ACTIVE_VIDEO" \
-      -f s16le -ar "$AUDIO_SAMPLERATE" -ac 2 -i "$AUDIO_FIFO" \
-      -map 0:v:0 -map 1:a:0 \
-      -vf "$VIDEO_FILTER" \
-      -c:v libx264 -preset "$ENCODER_PRESET" -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_MAXRATE" -bufsize "$VIDEO_BUFSIZE" \
-      -pix_fmt yuv420p -g "$GOP_SIZE" -keyint_min "$GOP_SIZE" \
-      -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_SAMPLERATE" \
-      -t 15 -y "$TEST_OUTPUT"
-  fi
+  ffmpeg -hide_banner \
+    "${PIPELINE_INPUTS[@]}" \
+    -filter_complex "$PIPELINE_FILTER" \
+    -map "[vout]" -map "[aout]" \
+    -c:v libx264 -preset "$ENCODER_PRESET" -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_MAXRATE" -bufsize "$VIDEO_BUFSIZE" \
+    -pix_fmt yuv420p -g "$GOP_SIZE" -keyint_min "$GOP_SIZE" \
+    -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_SAMPLERATE" \
+    -t 15 -y "$TEST_OUTPUT"
 
   stop_audio_feeder
+  
+  # Salin otomatis ke Movies Android
+  cp "$TEST_OUTPUT" "/storage/emulated/0/Movies/live_test_preview.mp4" 2>/dev/null || true
+
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${GREEN}║ [✓] UJI COBA BERHASIL! File disimpan ke:                         ║${NC}"
   echo -e "${GREEN}║     $TEST_OUTPUT                                     ║${NC}"
+  echo -e "${GREEN}║     /storage/emulated/0/Movies/live_test_preview.mp4             ║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════╝${NC}"
   echo -e "${CYAN}Video dan playlist musik berjalan normal. Anda siap live streaming!${NC}"
   echo -e "Jalankan live sesungguhnya dengan perintah: ${BOLD}./stream.sh${NC}"
@@ -403,29 +508,17 @@ reconnect_count=0
 
 while true; do
   start_audio_feeder
+  prepare_pipeline
 
   # Jalankan FFmpeg siaran langsung
-  if [[ "$MIX_VIDEO_AUDIO" == "true" ]]; then
-    ffmpeg -hide_banner \
-      -stream_loop -1 -re -i "$ACTIVE_VIDEO" \
-      -f s16le -ar "$AUDIO_SAMPLERATE" -ac 2 -i "$AUDIO_FIFO" \
-      -filter_complex "[0:v]${VIDEO_FILTER}[vout];[0:a]volume=${VIDEO_VOLUME},aresample=${AUDIO_SAMPLERATE}[va];[1:a]aresample=${AUDIO_SAMPLERATE}[ma];[va][ma]amix=inputs=2:duration=first:dropout_transition=0[aout]" \
-      -map "[vout]" -map "[aout]" \
-      -c:v libx264 -preset "$ENCODER_PRESET" -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_MAXRATE" -bufsize "$VIDEO_BUFSIZE" \
-      -pix_fmt yuv420p -g "$GOP_SIZE" -keyint_min "$GOP_SIZE" \
-      -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_SAMPLERATE" \
-      -f flv "$FULL_RTMP_TARGET" &
-  else
-    ffmpeg -hide_banner \
-      -stream_loop -1 -re -i "$ACTIVE_VIDEO" \
-      -f s16le -ar "$AUDIO_SAMPLERATE" -ac 2 -i "$AUDIO_FIFO" \
-      -map 0:v:0 -map 1:a:0 \
-      -vf "$VIDEO_FILTER" \
-      -c:v libx264 -preset "$ENCODER_PRESET" -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_MAXRATE" -bufsize "$VIDEO_BUFSIZE" \
-      -pix_fmt yuv420p -g "$GOP_SIZE" -keyint_min "$GOP_SIZE" \
-      -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_SAMPLERATE" \
-      -f flv "$FULL_RTMP_TARGET" &
-  fi
+  ffmpeg -hide_banner \
+    "${PIPELINE_INPUTS[@]}" \
+    -filter_complex "$PIPELINE_FILTER" \
+    -map "[vout]" -map "[aout]" \
+    -c:v libx264 -preset "$ENCODER_PRESET" -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_MAXRATE" -bufsize "$VIDEO_BUFSIZE" \
+    -pix_fmt yuv420p -g "$GOP_SIZE" -keyint_min "$GOP_SIZE" \
+    -c:a aac -b:a "$AUDIO_BITRATE" -ar "$AUDIO_SAMPLERATE" \
+    -f flv "$FULL_RTMP_TARGET" &
   
   MAIN_FFMPEG_PID=$!
   wait "$MAIN_FFMPEG_PID" 2>/dev/null

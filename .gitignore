@@ -45,3 +45,7 @@ nohup.out
 .vscode/
 *.swp
 *~
+*.bak
+test_preview_*.mp4
+*.mp4
+
